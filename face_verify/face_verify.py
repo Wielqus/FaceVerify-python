@@ -1,65 +1,59 @@
-import cv2
+# -*- coding: utf-8 -*-
+import PIL.Image
+import dlib
 import numpy as np
+import io
 import base64
-import pickle
-import os
 import json
 
-recognizer = cv2.face.LBPHFaceRecognizer_create(1, 5, 8, 8)
-detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+try:
+    import face_recognition_models
+except Exception:
+    print("Please install `face_recognition_models` with this command before using `face_recognition`:\n")
+    print("pip install git+https://github.com/ageitgey/face_recognition_models")
+    quit()
 
-def convert_image(image):
-    old_image = image.replace("{","[").replace("}","]")
-    json_image = json.loads(old_image)
-    return np.array(json_image, dtype=np.uint8)
+face_detector = dlib.get_frontal_face_detector()
 
-def verify(image, images):
-    images = list(map(convert_image, images))
-    labels = np.array([1] * len(images))
-    cv_image = convert_to_cv_image(image)
-    gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-    face_image = get_face(gray_image)
-    resized_image = resized(face_image)
-    
-    #recognizer.read("trainer.yml")
-    cv2.imwrite("old.png", images[0])
-    cv2.imwrite("new.png", resized_image)
-    recognizer.train(images, labels)
-    id, confidence = recognizer.predict(resized_image)
-    
-    print(confidence)
-    print(id)
+predictor_68_point_model = face_recognition_models.pose_predictor_model_location()
+pose_predictor_68_point = dlib.shape_predictor(predictor_68_point_model)
 
-    return confidence > 30 and confidence < 70
+face_recognition_model = face_recognition_models.face_recognition_model_location()
+face_encoder = dlib.face_recognition_model_v1(face_recognition_model)
 
-def register(image):
-    cv_image = convert_to_cv_image(image)
-    gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-    face_image = get_face(gray_image)
-    resized_image = resized(face_image)
-    return str(resized_image.tolist())
+def face_distance(face_encodings, face_to_compare):
+    if len(face_encodings) == 0:
+        return np.empty((0))
+    return np.linalg.norm(face_encodings - face_to_compare, axis=1)
 
-def save(image, id):
-    cv_image = convert_to_cv_image(image)
-    gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-    face_image = get_face(gray_image)
-    recognizer.train([face_image], np.array(id))
-    recognizer.save('trainer.yml')
+def _raw_face_locations(img):
+    return face_detector(img)
 
-def convert_to_cv_image(image):
-    jpg_original = base64.b64decode(image.replace("data:image/png;base64,", ""))
-    jpg_as_np = np.frombuffer(jpg_original, dtype=np.uint8)
-    img = cv2.imdecode(jpg_as_np, flags=cv2.COLOR_BGR2GRAY)
-    return img
+def _raw_face_landmarks(face_image):
+    face_locations = _raw_face_locations(face_image)
+    pose_predictor = pose_predictor_68_point
+    return [pose_predictor(face_image, face_location) for face_location in face_locations]
 
-def get_face(image):
-    faces = detector.detectMultiScale(image, 1.1, 4)
-    if len(faces):
-        x,y,w,h = faces[0]
-        cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        return image[y:y + h, x:x + w]
-    else:    
-        raise NameError('Face not detected')
+def face_encodings(face_image):
+    raw_landmarks = _raw_face_landmarks(face_image)
+    return [np.array(face_encoder.compute_face_descriptor(face_image, raw_landmark_set, 1)) for raw_landmark_set in raw_landmarks]
 
-def resized(image):
-    return cv2.resize(image, (30, 30), interpolation = cv2.INTER_AREA)
+def verify(face, faces, tolerance = 0.6):
+    face = face_encodings(base64ToNumpyArray(face))[0]
+    json_image = json.loads(faces[0])
+    face_as_np =  np.array(json_image)
+    return face_distance([face_as_np], face) < tolerance
+
+def register(face):
+    face_as_np = base64ToNumpyArray(face)
+    face_encoding = face_encodings(face_as_np)
+    if len(face_encoding):
+        return str(list(face_encoding[0]))
+    else:
+        raise NameError("Face not detected")
+
+def base64ToNumpyArray(base64_string):
+    base64_string = base64.b64decode(base64_string.replace("data:image/png;base64,", ""))
+    buf = io.BytesIO(base64_string)
+    img = PIL.Image.open(buf).convert('RGB')
+    return np.array(img, dtype=np.uint8)
