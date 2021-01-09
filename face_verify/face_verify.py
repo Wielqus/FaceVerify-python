@@ -40,9 +40,13 @@ def face_encodings(face_image):
 
 def verify(face, faces, tolerance = 0.6):
     face = face_encodings(base64ToNumpyArray(face))[0]
-    json_image = json.loads(faces[0])
-    face_as_np =  np.array(json_image)
-    return face_distance([face_as_np], face) < tolerance
+    for face_encoding in faces:
+        json_image = json.loads(face_encoding)
+        face_as_np =  np.array(json_image)
+        face_distance = face_distance([face_as_np], face)
+        if face_distance < tolerance:
+            return True
+    return False
 
 def register(face):
     face_as_np = base64ToNumpyArray(face)
