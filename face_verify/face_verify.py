@@ -43,8 +43,8 @@ def verify(face, faces, tolerance = 0.6):
     for face_encoding in faces:
         json_image = json.loads(face_encoding)
         face_as_np =  np.array(json_image)
-        face_distance = face_distance([face_as_np], face)
-        if face_distance < tolerance:
+        distance = face_distance([face_as_np], face)
+        if distance < tolerance:
             return True
     return False
 
